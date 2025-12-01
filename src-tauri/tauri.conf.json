@@ -1,26 +1,26 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "flocktauri",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "identifier": "com.flocktauri.flock",
   "build": {
     "beforeDevCommand": "",
-    "devUrl": "file://../../src/index.html",
-    "beforeBuildCommand": "",
-    "frontendDist": "../src"
+    "devUrl": "https://flockmod.com/draw/",
+    "beforeBuildCommand": ""
   },
+  
   "app": {
     "windows": [
       {
         "title": "FlockmoD",
         "width": 1280,
         "height": 800,
-        "center": true
+        "center": true,
+        "url": "https://flockmod.com/draw/"
       }
     ],
     "security": {
         "csp": "default-src 'self'; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; font-src 'self' https://cdnjs.cloudflare.com data:; img-src 'self' data: https:; connect-src 'self' ws: wss: https:"
-
     }
   },
   "bundle": {
