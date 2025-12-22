@@ -10,18 +10,9 @@
   },
   
   "app": {
-    "windows": [
-      {
-        "title": "FlockmoD",
-        "width": 1280,
-        "height": 800,
-        "center": true,
-        "url": "https://flockmod.com/draw/",
-        "dragDropEnabled": true
-      }
-    ],
+    "windows": [],
     "security": {
-        "csp": "default-src 'self'; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; font-src 'self' https://cdnjs.cloudflare.com data:; img-src 'self' data: https:; connect-src 'self' ws: wss: https:"
+      "csp": "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self' ws: wss: https:"
     }
   },
   "bundle": {
