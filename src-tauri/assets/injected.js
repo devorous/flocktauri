@@ -7,13 +7,20 @@ let broadcasthandler;
 let actionhandler;
 let modsDialogInject;
 
+`
+    TODO
 
+    add back the troll monitor logic
+
+
+`
 
 console.log("Mods loaded...");
 
 const STORAGE_KEY = 'mod_settings';
 
 const DEFAULT_SETTINGS = {
+    customDefaultStyles: true,
     customCssEnabled: true,
     customCss: ""
 };
@@ -166,6 +173,7 @@ class ModHandler{
         this.modUsers = [];
         this.connected = false;
         this.currentRoomName = null;
+        this.originalTheme = null;
     }
     initialize() {
         this.room = window.room;
@@ -219,6 +227,7 @@ class ModHandler{
             drawgame = new Drawgame(0, 1920, 0, 1080);
         }
 
+
         if (!copier) {
             copier = new Copier(messagehandler);
         }
@@ -239,22 +248,30 @@ class ModHandler{
         console.log("Leaving room");
     }
     setupInterception() {
-        
         if (window.room) {
-
             this.connected = true;
-
-            console.log("Console loaded");
-
             window.modSettings = loadSettings(); 
             
-            // If CSS is enabled in storage, inject it right now
+            // 1. Handle Custom CSS (Textbox)
             if (window.modSettings.customCssEnabled && window.modSettings.customCss) {
-                
-                let styleTag = $("<style id='flockmod-custom-css'>").appendTo("head");
-                styleTag.text(window.modSettings.customCss);
+                this.applyTextboxCss(window.modSettings.customCss);
             }
-            // --------------------------------------------------
+
+            // 2. Handle Custom Default Theme (The big block at the bottom)
+            const $themeLink = $("head link[name='currentTheme']");
+            const currentHref = $themeLink.attr("href") || "";
+
+            // Save the OG state if it's not already a data URI (which would be our mod)
+            if (!this.originalThemeHref && !currentHref.startsWith("data:")) {
+                this.originalThemeHref = currentHref;
+            }
+
+            if (window.modSettings.customDefaultStyles) {
+                this.applyCustomDefaultTheme();
+            } else if (this.originalThemeHref) {
+                $themeLink.attr("href", this.originalThemeHref);
+            }
+
             this.startReconnectWatcher();
 
             messagehandler = new MessageHandler();
@@ -266,24 +283,36 @@ class ModHandler{
                 window.socket.receive(message);
             }
 
-
-            const cssContent = customCss;
-
-            // Create a data URI
-            const dataUri = 'data:text/css;charset=utf-8,' + encodeURIComponent(cssContent);
-            
-            // Update the link tag
-            $("head link[name='currentTheme']").attr("href", dataUri);
-
             modsocket = new ModSocket();
-
             this.setupGlobalOverrides();
         } else {
             setTimeout(() => {this.setupInterception()}, 100);
         }
     }
+    applyCustomDefaultTheme() {
+        // References the 'customCss' variable at the bottom of your script
+        const dataUri = 'data:text/css;charset=utf-8,' + encodeURIComponent(customCss);
+        $("head link[name='currentTheme']").attr("href", dataUri);
+    }
 
-startReconnectWatcher() {
+    revertToOriginalTheme() {
+        if (this.originalThemeHref) {
+            $("head link[name='currentTheme']").attr("href", this.originalThemeHref);
+        }
+    }
+
+    applyTextboxCss(css) {
+        let styleTag = $("#flockmod-custom-css");
+        if (!styleTag.length) {
+            styleTag = $("<style id='flockmod-custom-css'>").appendTo("head");
+        }
+        styleTag.text(css);
+    }
+
+    removeTextboxCss() {
+        $("#flockmod-custom-css").remove();
+    }
+    startReconnectWatcher() {
         let reconnecting = false;
         let lastReconnectTime = 0;
         
@@ -353,36 +382,6 @@ startReconnectWatcher() {
 
         setupUI();
 
-
-         if (typeof ColorWheel !== 'undefined') {
-            const OriginalColorWheel = ColorWheel;
-            
-            window.ColorWheel = class extends OriginalColorWheel {
-                constructor(...args) {
-                    super(...args);
-                    
-                    // Override the image loading
-                    const wheelCanvas = this.wheelCanvas;
-                    const wheel = this.wheel;
-                    
-                    setTimeout(() => {
-                        const colorWheelDiv = wheel.find(".colorWheel");
-                        // Clear any existing content
-                        colorWheelDiv.empty();
-                        
-                        const img = new Image();
-                        img.onload = function() {
-                            wheelCanvas.drawImage(img, 0, 0);
-                            colorWheelDiv.append(wheelCanvas.canvas[0]);
-                        };
-                        img.src = COLORWHEEL_IMAGE_BASE64;
-                    }, 0);
-                }
-            };
-            
-            // Make it globally accessible
-            window.ColorWheel = window.ColorWheel;
-        }
         const originalShowDialog = window.UI.dialogHandler.showDialog;
         window.UI.dialogHandler.showDialog = function(dialogName, params) {
             
@@ -705,11 +704,16 @@ function createModsDialogInjectClass() {
                       Features:
                     </label>
 
-                      <label style="display: block; margin-bottom: 8px; cursor: pointer;">
-                        <input type="checkbox" name="custom-css" style="margin-right: 8px;">
-                        Enable custom CSS
-                      </label>
-                    </div>
+                    <label style="display: block; margin-bottom: 8px; cursor: pointer;">
+                      <input type="checkbox" name="custom-default-styles" style="margin-right: 8px;">
+                      Enable Custom Default Theme (Blue & Orange)
+                    </label>
+
+                    <label style="display: block; margin-bottom: 8px; cursor: pointer;">
+                      <input type="checkbox" name="custom-css" style="margin-right: 8px;">
+                      Enable custom CSS (Textbox)
+                    </label>
+
                   </div>
 
                   <div class="form-group" style="margin-bottom: 20px;">
@@ -718,7 +722,7 @@ function createModsDialogInjectClass() {
                       margin-bottom: 8px;
                       font-weight: bold;
                     ">
-                      Custom CSS:
+                      Custom CSS Textbox:
                     </label>
 
                     <textarea
@@ -737,14 +741,6 @@ function createModsDialogInjectClass() {
                         resize: vertical;
                       "
                     ></textarea>
-
-                    <small style="
-                      color: var(--bs-secondary-color);
-                      display: block;
-                      margin-top: 5px;
-                    ">
-                      Example: .userlistIcon { font-size: 16px; }
-                    </small>
                   </div>
 
                   <button class="apply-button" style="
@@ -765,52 +761,49 @@ function createModsDialogInjectClass() {
               `);
 
                 if (window.modSettings) {
-                
                     this.content.find("input[name='custom-css']")
                     .prop("checked", !!window.modSettings.customCssEnabled);
+
+                    this.content.find("input[name='custom-default-styles']")
+                    .prop("checked", !!window.modSettings.customDefaultStyles);
 
                     this.content.find("textarea[name='custom-css-input']")
                     .val(window.modSettings.customCss || "");
                 }
-                // --- END: LOADING SAVED DATA INTO UI ---
 
-
-                // --- START: SAVING DATA ON APPLY ---
                 this.content.find(".apply-button").on("click", () => {
-
-                    const customCssEnabled =
-                    this.content.find("input[name='custom-css']").prop("checked");
-
-                    const customCss =
-                    this.content.find("textarea[name='custom-css-input']").val();
+                    const customCssEnabled = this.content.find("input[name='custom-css']").prop("checked");
+                    const customDefaultStyles = this.content.find("input[name='custom-default-styles']").prop("checked");
+                    const customCssInput = this.content.find("textarea[name='custom-css-input']").val();
                     
-                    // Update the global settings object
                     window.modSettings ??= {};
                     Object.assign(window.modSettings, {
-                    customCssEnabled,
-                    customCss
+                        customCssEnabled,
+                        customDefaultStyles,
+                        customCss: customCssInput
                     });
                     
-                    // SAVE TO LOCAL STORAGE
                     saveSettings(window.modSettings); 
 
-                    if (customCssEnabled && customCss) {
-                    this.applyCustomCss(customCss);
+                    // Apply/Remove Textbox CSS
+                    if (customCssEnabled && customCssInput) {
+                        this.applyCustomCss(customCssInput);
                     } else {
-                    this.removeCustomCss();
+                        this.removeCustomCss();
+                    }
+
+                    // Apply/Remove Personal Dark Theme
+                    if (customDefaultStyles) {
+                        mod.applyCustomDefaultTheme();
+                    } else {
+                        mod.revertToOriginalTheme();
                     }
 
                     const btn = this.content.find(".apply-button");
                     const originalText = btn.text();
-
-                    btn
-                    .text("✓ Applied!")
-                    .css("background-color", "var(--bs-success)");
-
+                    btn.text("✓ Applied!").css("background-color", "var(--bs-success)");
                     setTimeout(() => {
-                    btn
-                        .text(originalText)
-                        .css("background-color", "var(--bs-primary)");
+                        btn.text(originalText).css("background-color", "var(--bs-primary)");
                     }, 2000);
                 });
             }
@@ -818,99 +811,50 @@ function createModsDialogInjectClass() {
             if (subcontent === "about") {
               this.loadSubcontent(`
                 <div class="about">
-                    <h2 style="
-                        border-bottom: 1px solid var(--bs-border-color);
-                        padding-bottom: 10px;
-                        margin-bottom: 20px;
-                    ">
+                    <h2 style="border-bottom: 1px solid var(--bs-border-color); padding-bottom: 10px; margin-bottom: 20px;">
                         About This Mod
                     </h2>
-
-                  <h2 style="
-                    color: var(--bs-body-color);
-                    margin-top: 25px;
-                    margin-bottom: 12px;
-                    font-size: 16px;
-                  ">
+                  <h2 style="color: var(--bs-body-color); margin-top: 25px; margin-bottom: 12px; font-size: 16px;">
                     Key Features
                   </h2>
-
                   <p style="color: var(--bs-secondary-color); line-height: 1.6; margin-bottom: 8px;">
                     <strong style="color: var(--bs-body-color);">Modded User Network:</strong><br>
-                    Connects to a private Deno server to identify other  modded users and sync with them. 
+                    Connects to a private Deno server to identify other modded users and sync with them. 
                     Also adds a little crown next to a modded user's name.
                   </p>
-
                   <p style="color: var(--bs-secondary-color); line-height: 1.6; margin-bottom: 8px;">
                     <strong style="color: var(--bs-body-color);">Auto Resolution:</strong><br>
                     Automatically adjusts to 2160x1920 resolution for XL board sizes.
                   </p>
-
                   <p style="color: var(--bs-secondary-color); line-height: 1.6; margin-bottom: 8px;">
                     <strong style="color: var(--bs-body-color);">Custom Styling:</strong><br>
                     Persistent custom CSS injection with built-in styling improvements.
                   </p>
-
-                  <h3 style="
-                    color: var(--bs-body-color);
-                    margin-top: 25px;
-                    margin-bottom: 12px;
-                    font-size: 16px;
-                    padding-top: 5px;
-                    border-top: 1px solid var(--bs-border-color);
-                  ">
+                  <h3 style="color: var(--bs-body-color); margin-top: 25px; margin-bottom: 12px; font-size: 16px; padding-top: 5px; border-top: 1px solid var(--bs-border-color);">
                     Technical Details
                   </h3>
-
                   <p style="color: var(--bs-secondary-color); line-height: 1.6;">
                     <strong style="color: var(--bs-body-color);">Version:</strong> 1.2.2<br>
                     <strong style="color: var(--bs-body-color);">Platform:</strong> Tauri (Webview2)<br>
                     <strong style="color: var(--bs-body-color);">Server Source Code:</strong> 
-                    <a href="https://github.com/devorous/flocksockets" 
-                       style="color: var(--bs-link-color); text-decoration: none;"
-                       target="_blank">github.com/devorous/flocksockets</a>
+                    <a href="https://github.com/devorous/flocksockets" style="color: var(--bs-link-color); text-decoration: none;" target="_blank">github.com/devorous/flocksockets</a>
                   </p>
-
-                  <h3 style="
-                    color: var(--bs-body-color);
-                    margin-top: 25px;
-                    margin-bottom: 12px;
-                    font-size: 16px;
-                    padding-top: 5px;
-                    border-top: 1px solid var(--bs-border-color);
-                  ">
+                  <h3 style="color: var(--bs-body-color); margin-top: 25px; margin-bottom: 12px; font-size: 16px; padding-top: 5px; border-top: 1px solid var(--bs-border-color);">
                     Recent Updates
                   </h3>
-
                   <p style="color: var(--bs-secondary-color); line-height: 1.6; font-size: 13px;">
                     • Implemented Zexium's connection monitor<br>
                     • Added mod settings menu with persistent storage<br>
                     • Improved troll detection and custom alert sounds<br>
                     • Made the chat colour scheme less blinding
                   </p>
-
-                  <p style="
-                    color: var(--bs-gray-600);
-                    margin-top: 30px;
-                    font-size: 12px;
-                  ">
-                    
-                  </p>
-                    <h3 style="
-                        color: var(--bs-body-color);
-                        margin-top: 25px;
-                        margin-bottom: 12px;
-                        font-size: 16px;
-                        padding-top: 5px;
-                        border-top: 1px solid var(--bs-border-color);
-                        ">
+                    <h3 style="color: var(--bs-body-color); margin-top: 25px; margin-bottom: 12px; font-size: 16px; padding-top: 5px; border-top: 1px solid var(--bs-border-color);">
                         Thanks & Credits
                     </h3>
                     <p style="color: var(--bs-secondary-color); line-height: 1.6; font-size: 13px;">
                         Thanks to <strong style="color: var(--bs-body-color);">Zexium</strong> for foundational mod ideas, 
-                        connection monitoring, and troll detection logic that inspired and improved this project.<br><br>
-                        Thanks to <strong style="color: var(--bs-body-color);">Sphoon</strong> for his work deciphering the code,
-                        and helping set up the foundation for this work.
+                        connection monitoring, and troll detection logic.<br><br>
+                        Thanks to <strong style="color: var(--bs-body-color);">Sphoon</strong> for his work deciphering the code.
                     </p>
                 </div>
               `);
@@ -3145,144 +3089,3 @@ fieldset {
     color: var(--bs-body-color);
     border-color: var(--bs-border-color);
 }`
-
-const COLORWHEEL_IMAGE_BASE64 = `data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGUAAABlCAYAAABUfC3PAAAEs2lUWHRYTUw6Y29tLmFkb2JlLnht
-cAAAAAAAPD94cGFja2V0IGJlZ2luPSLvu78iIGlkPSJXNU0wTXBDZWhpSHpyZVN6TlRjemtjOWQi
-Pz4KPHg6eG1wbWV0YSB4bWxuczp4PSJhZG9iZTpuczptZXRhLyIgeDp4bXB0az0iWE1QIENvcmUg
-NS41LjAiPgogPHJkZjpSREYgeG1sbnM6cmRmPSJodHRwOi8vd3d3LnczLm9yZy8xOTk5LzAyLzIy
-LXJkZi1zeW50YXgtbnMjIj4KICA8cmRmOkRlc2NyaXB0aW9uIHJkZjphYm91dD0iIgogICAgeG1s
-bnM6dGlmZj0iaHR0cDovL25zLmFkb2JlLmNvbS90aWZmLzEuMC8iCiAgICB4bWxuczpleGlmPSJo
-dHRwOi8vbnMuYWRvYmUuY29tL2V4aWYvMS4wLyIKICAgIHhtbG5zOnBob3Rvc2hvcD0iaHR0cDov
-L25zLmFkb2JlLmNvbS9waG90b3Nob3AvMS4wLyIKICAgIHhtbG5zOnhtcD0iaHR0cDovL25zLmFk
-b2JlLmNvbS94YXAvMS4wLyIKICAgIHhtbG5zOnhtcE1NPSJodHRwOi8vbnMuYWRvYmUuY29tL3hh
-cC8xLjAvbW0vIgogICAgeG1sbnM6c3RFdnQ9Imh0dHA6Ly9ucy5hZG9iZS5jb20veGFwLzEuMC9z
-VHlwZS9SZXNvdXJjZUV2ZW50IyIKICAgdGlmZjpJbWFnZUxlbmd0aD0iMTAxIgogICB0aWZmOklt
-YWdlV2lkdGg9IjEwMSIKICAgdGlmZjpSZXNvbHV0aW9uVW5pdD0iMiIKICAgdGlmZjpYUmVzb2x1
-dGlvbj0iNzIuMCIKICAgdGlmZjpZUmVzb2x1dGlvbj0iNzIuMCIKICAgZXhpZjpQaXhlbFhEaW1l
-bnNpb249IjEwMSIKICAgZXhpZjpQaXhlbFlEaW1lbnNpb249IjEwMSIKICAgZXhpZjpDb2xvclNw
-YWNlPSIxIgogICBwaG90b3Nob3A6Q29sb3JNb2RlPSIzIgogICBwaG90b3Nob3A6SUNDUHJvZmls
-ZT0ic1JHQiBJRUM2MTk2Ni0yLjEiCiAgIHhtcDpNb2RpZnlEYXRlPSIyMDIwLTEwLTA5VDE2OjEw
-OjI3KzAyOjAwIgogICB4bXA6TWV0YWRhdGFEYXRlPSIyMDIwLTEwLTA5VDE2OjEwOjI3KzAyOjAw
-Ij4KICAgPHhtcE1NOkhpc3Rvcnk+CiAgICA8cmRmOlNlcT4KICAgICA8cmRmOmxpCiAgICAgIHN0
-RXZ0OmFjdGlvbj0icHJvZHVjZWQiCiAgICAgIHN0RXZ0OnNvZnR3YXJlQWdlbnQ9IkFmZmluaXR5
-IFBob3RvIDEuOC41IgogICAgICBzdEV2dDp3aGVuPSIyMDIwLTEwLTA5VDE2OjEwOjI3KzAyOjAw
-Ii8+CiAgICA8L3JkZjpTZXE+CiAgIDwveG1wTU06SGlzdG9yeT4KICA8L3JkZjpEZXNjcmlwdGlv
-bj4KIDwvcmRmOlJERj4KPC94OnhtcG1ldGE+Cjw/eHBhY2tldCBlbmQ9InIiPz73mKG0AAABgmlD
-Q1BzUkdCIElFQzYxOTY2LTIuMQAAKJF1kc8rRFEUxz8zQxg0ioWFxaRhhfwoPzYWMzEUFjOj/Nq8
-ed6bUTPj9d6TZKtspyix8WvBX8BWWStFpGRlYU1s0HOeUSOZczv3fO733nO691zwJjJq1irrhGzO
-NmPRcHBqeiZY8YifKmoJ0KeoljEeH05Q0t5u8Ljxqt2tVfrcv1Y9r1kqeCqFB1XDtIVHhMeWbcPl
-TeEGNa3MCx8Lt5lyQeFrV08W+MnlVIE/XDYTsQh464SDqV+c/MVq2swKy8sJZTNL6s993JfUaLnJ
-uMRm8SYsYkQJE2SUISL00sWAzL20002HrCiR3/mdP8Gi5KoyG6xgskCKNDZtoi5JdU2iLromI8OK
-2/+/fbX0nu5C9ZowlD84zksLVGzAZ95x3vcd5/MAfPdwlivmL+5B/6vo+aIW2oXAGpycF7XkFpyu
-Q+OdoZjKt+QT9+o6PB9B7TTUX4J/ttCzn30ObyGxKl91Ads70CrnA3Nfb8Nn6kNCTB4AAAAJcEhZ
-cwAACxMAAAsTAQCanBgAABiLSURBVHiczV1Rr+O2zqRz9p/3Z/apQPvQokB3z57dnCS2+D1EQw9H
-lJP03g+4BgLLFCXLHA1JyT67S2utmdlmZq+eUW5mtqLs7jOdrejnVfnm7s+M51Dex/jUPel+Kk9n
-HhvXuTvOm7u31lpz923btrau63a9XrfPz8/2/fv39vvvv2+//PJL+7Jtmz17uPvTunQs/HP3RWWz
-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`
